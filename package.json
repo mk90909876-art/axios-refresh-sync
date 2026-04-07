@@ -1,0 +1,25 @@
+{
+  "name": "axios-refresh-sync",
+  "version": "0.1.0",
+  "description": "Coordinates proactive and reactive JWT refresh under a single lock for Axios — prevents race conditions between timer-based and interceptor-based token refresh",
+  "main": "src/index.js",
+  "type": "module",
+  "keywords": [
+    "axios",
+    "jwt",
+    "refresh",
+    "token",
+    "auth",
+    "interceptor",
+    "supabase",
+    "race-condition"
+  ],
+  "peerDependencies": {
+    "axios": ">=1.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mk90909876-art/axios-refresh-sync"
+  }
+}
