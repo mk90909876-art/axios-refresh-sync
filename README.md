@@ -58,6 +58,12 @@ manager.scheduleRefresh()
 | `onRefreshFailed` | ✓ | Called when refresh fails (e.g. redirect to login) |
 | `minutesBefore` | ✗ | Minutes before expiry to proactively refresh (default: 1) |
 
+## Multi-tab sync
+
+If a token is refreshed in one tab, other tabs detect the update via the
+`localStorage` storage event and flush their queues automatically — 
+no duplicate refresh requests across tabs.
+
 ## How it works
 
 Both the proactive timer and the reactive interceptor call through a single shared lock. If one is already refreshing, the other joins a queue and waits for the result — no second request is sent to your backend.

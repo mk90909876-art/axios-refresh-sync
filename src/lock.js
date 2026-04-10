@@ -1,6 +1,3 @@
-// Core refresh lock — ensures only ONE refresh request fires at a time.
-// Both the proactive timer and the reactive interceptor call through this.
-
 let isRefreshing = false;
 let failedQueue = [];
 
@@ -24,3 +21,14 @@ export const enqueue = () => {
 export const flushQueue = (error, token) => {
     processQueue(error, token);
 };
+
+// Multi-tab sync — if another tab refreshed the token,
+// flush the queue with the new token so this tab doesn't refresh again
+if (typeof window !== "undefined") {
+    window.addEventListener("storage", (e) => {
+        if (e.key === "access_token" && e.newValue && isRefreshing) {
+            isRefreshing = false;
+            processQueue(null, e.newValue);
+        }
+    });
+}

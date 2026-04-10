@@ -1,6 +1,6 @@
 {
   "name": "axios-refresh-sync",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Coordinates proactive and reactive JWT refresh under a single lock for Axios — prevents race conditions between timer-based and interceptor-based token refresh",
   "main": "src/index.js",
   "type": "module",
