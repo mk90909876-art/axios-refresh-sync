@@ -1,7 +1,6 @@
-// Proactive refresh — fires a timer 1 minute before token expiry.
+// Proactive refresh — fires a timer before token expiry.
 // Calls through the shared lock so it can't race with the interceptor.
-
-import { acquireLock, setLock, enqueue, flushQueue } from './lock.js';
+// Uses _refreshClient (bare axios instance) to avoid interceptor recursion.
 
 const decodeExp = (accessToken) => {
     try {
@@ -12,20 +11,14 @@ const decodeExp = (accessToken) => {
     }
 };
 
-let _timer = null;
-
 export const scheduleRefresh = (config) => {
     const {
         getAccessToken,
-        getRefreshToken,
-        setTokens,
-        onRefreshFailed,
         minutesBefore = 1,
-        refreshEndpoint,
-        axiosInstance,
+        _lock,
     } = config;
 
-    if (_timer) clearTimeout(_timer);
+    _lock.clearTimer();
 
     const accessToken = getAccessToken();
     if (!accessToken) return;
@@ -41,7 +34,7 @@ export const scheduleRefresh = (config) => {
         return;
     }
 
-    _timer = setTimeout(() => runRefresh(config), refreshIn);
+    _lock.setTimer(setTimeout(() => runRefresh(config), refreshIn));
 };
 
 export const runRefresh = async (config) => {
@@ -50,15 +43,19 @@ export const runRefresh = async (config) => {
         setTokens,
         onRefreshFailed,
         refreshEndpoint,
-        axiosInstance,
-        getAccessToken,
-        minutesBefore,
+        _refreshClient,
+        _lock,
     } = config;
 
+    const parseTokens = config.parseTokens || ((data) => ({
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+    }));
+
     // If interceptor already grabbed the lock, just wait for its result
-    if (acquireLock()) {
+    if (_lock.acquireLock()) {
         try {
-            const token = await enqueue();
+            await _lock.enqueue();
             scheduleRefresh(config); // schedule next timer with new token
         } catch {
             // interceptor already handled failure + redirect
@@ -72,20 +69,22 @@ export const runRefresh = async (config) => {
         return;
     }
 
-    setLock(true);
+    _lock.setLock(true);
 
     try {
-        const { data } = await axiosInstance.post(refreshEndpoint, {
+        // Use _refreshClient — a bare axios instance with no interceptors
+        const { data } = await _refreshClient.post(refreshEndpoint, {
             refresh_token: refreshToken,
         });
 
-        setTokens(data.access_token, data.refresh_token);
-        flushQueue(null, data.access_token);
+        const tokens = parseTokens(data);
+        setTokens(tokens.accessToken, tokens.refreshToken);
+        _lock.flushQueue(null, tokens.accessToken);
         scheduleRefresh(config); // schedule next timer
     } catch (err) {
-        flushQueue(err, null);
+        _lock.flushQueue(err, null);
         onRefreshFailed();
     } finally {
-        setLock(false);
+        _lock.setLock(false);
     }
 };

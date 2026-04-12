@@ -1,7 +1,6 @@
 // Reactive refresh — catches 401s from failed API calls.
 // Calls through the shared lock so it can't race with the proactive timer.
-
-import { acquireLock, setLock, enqueue, flushQueue } from './lock.js';
+// Uses _refreshClient (bare axios instance) to avoid interceptor recursion.
 
 export const applyInterceptor = (axiosInstance, config) => {
     const {
@@ -9,9 +8,16 @@ export const applyInterceptor = (axiosInstance, config) => {
         setTokens,
         onRefreshFailed,
         refreshEndpoint,
+        _refreshClient,
+        _lock,
     } = config;
 
-    axiosInstance.interceptors.response.use(
+    const parseTokens = config.parseTokens || ((data) => ({
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+    }));
+
+    const responseInterceptorId = axiosInstance.interceptors.response.use(
         (res) => res,
         async (err) => {
             const originalRequest = err.config;
@@ -27,9 +33,10 @@ export const applyInterceptor = (axiosInstance, config) => {
             }
 
             // Proactive timer already grabbed the lock — join the queue
-            if (acquireLock()) {
+            if (_lock.acquireLock()) {
+                originalRequest._retry = true;
                 try {
-                    const token = await enqueue();
+                    const token = await _lock.enqueue();
                     originalRequest.headers.Authorization = `Bearer ${token}`;
                     return axiosInstance(originalRequest);
                 } catch (e) {
@@ -38,25 +45,30 @@ export const applyInterceptor = (axiosInstance, config) => {
             }
 
             originalRequest._retry = true;
-            setLock(true);
+            _lock.setLock(true);
 
             try {
-                const { data } = await axiosInstance.post(refreshEndpoint, {
+                // Use _refreshClient — a bare axios instance with no interceptors
+                // to prevent recursive 401 handling on the refresh call itself
+                const { data } = await _refreshClient.post(refreshEndpoint, {
                     refresh_token: refreshToken,
                 });
 
-                setTokens(data.access_token, data.refresh_token);
-                flushQueue(null, data.access_token);
+                const tokens = parseTokens(data);
+                setTokens(tokens.accessToken, tokens.refreshToken);
+                _lock.flushQueue(null, tokens.accessToken);
 
-                originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
+                originalRequest.headers.Authorization = `Bearer ${tokens.accessToken}`;
                 return axiosInstance(originalRequest);
             } catch (refreshErr) {
-                flushQueue(refreshErr, null);
+                _lock.flushQueue(refreshErr, null);
                 onRefreshFailed();
                 return Promise.reject(refreshErr);
             } finally {
-                setLock(false);
+                _lock.setLock(false);
             }
         }
     );
+
+    return responseInterceptorId;
 };
