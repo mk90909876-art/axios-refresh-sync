@@ -65,6 +65,7 @@ export const runRefresh = async (config) => {
 
     const refreshToken = getRefreshToken();
     if (!refreshToken) {
+        // No refresh token — cannot refresh, session is definitively gone
         onRefreshFailed();
         return;
     }
@@ -83,7 +84,12 @@ export const runRefresh = async (config) => {
         scheduleRefresh(config); // schedule next timer
     } catch (err) {
         _lock.flushQueue(err, null);
-        onRefreshFailed();
+        // Only destroy the session if the server definitively rejected our refresh token.
+        // Network errors (no response) should NOT log the user out — they may be temporarily offline.
+        const isAuthError = err.response && err.response.status < 500;
+        if (isAuthError) {
+            onRefreshFailed();
+        }
     } finally {
         _lock.setLock(false);
     }

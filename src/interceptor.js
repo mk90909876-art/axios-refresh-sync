@@ -28,6 +28,7 @@ export const applyInterceptor = (axiosInstance, config) => {
 
             const refreshToken = getRefreshToken();
             if (!refreshToken) {
+                // No refresh token stored — session is definitively gone
                 onRefreshFailed();
                 return Promise.reject(err);
             }
@@ -62,7 +63,12 @@ export const applyInterceptor = (axiosInstance, config) => {
                 return axiosInstance(originalRequest);
             } catch (refreshErr) {
                 _lock.flushQueue(refreshErr, null);
-                onRefreshFailed();
+                // Only destroy the session if the server definitively rejected our refresh token.
+                // Network errors (no response) should NOT log the user out — they may be offline.
+                const isAuthError = refreshErr.response && refreshErr.response.status < 500;
+                if (isAuthError) {
+                    onRefreshFailed();
+                }
                 return Promise.reject(refreshErr);
             } finally {
                 _lock.setLock(false);
